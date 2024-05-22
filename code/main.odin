@@ -2,6 +2,7 @@ package server
 
 import "core:fmt"
 import "core:net"
+import "core:thread"
 
 main :: proc(){
     socket : net.TCP_Socket
@@ -28,18 +29,21 @@ main :: proc(){
             fmt.eprintln("accept_tcp error:", err)
             return
         }
-
-        fmt.println("Received request")
-
-        buffer_size :: 4096
-        buff: [buffer_size]byte
-        size: int
-        size, err = net.recv_tcp(client, buff[:])
-        if err != nil {
-            fmt.eprintln("recv_tcp error:", err)
-            return
-        }
-
-        fmt.printfln("Received: %v", string(buff[:size - 1]))
+        thread := thread.create_and_start_with_poly_data(client, serve_thread)
     }
+}
+
+serve_thread :: proc(socket: net.TCP_Socket) {
+    fmt.println("Received request")
+
+    buffer_size :: 4096
+    buff: [buffer_size]byte
+   
+    size, err := net.recv_tcp(socket, buff[:])
+    if err != nil {
+        fmt.eprintln("recv_tcp error:", err)
+        return
+    }
+
+    fmt.printfln("Received: %v", string(buff[:size - 1]))
 }
