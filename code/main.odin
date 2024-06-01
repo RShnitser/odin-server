@@ -2,11 +2,14 @@ package server
 
 import "core:fmt"
 import "core:net"
-import win "core:sys/windows"
+import "core:sync"
 import "core:thread"
+import "core:time"
+
+threads_closed: sync.Wait_Group
 
 main :: proc() {
-	socket: net.Any_Socket
+	socket: net.TCP_Socket
 	endpoint: net.Endpoint
 	err: net.Network_Error
 
@@ -16,48 +19,24 @@ main :: proc() {
 		return
 	}
 
-	socket, err = net.create_socket(net.Address_Family.IP4, net.Socket_Protocol.TCP)
+
+	socket, err = net.listen_tcp(endpoint)
 	if err != nil {
-		fmt.eprintln("create_socket error:", err)
+		fmt.eprintln("listen_tcp error:", err)
 		return
 	}
 
-	tcp_socket := socket.(net.TCP_Socket)
-
-	err = net.set_option(tcp_socket, .Reuse_Address, true)
-	if err != nil {
-		fmt.eprintln("set_option error:", err)
-		return
-	}
-
-	err = net.bind(tcp_socket, endpoint)
-	if err != nil {
-		fmt.eprintln("bind error:", err)
-		return
-	}
-
-	// no bind function in the net library
-	BACKLOG :: 1000
-	if res := win.listen(win.SOCKET(tcp_socket), BACKLOG); res == win.SOCKET_ERROR {
-		err = net.Listen_Error(win.WSAGetLastError())
-		fmt.eprintln("listen error:", err)
-		return
-	}
-
-	defer net.close(tcp_socket)
+	defer net.close(socket)
 
 	THREAD_COUNT :: 10
 	threads: [THREAD_COUNT]^thread.Thread
 
+	sync.wait_group_add(&threads_closed, THREAD_COUNT)
 	for i in 0 ..< THREAD_COUNT {
-		threads[i] = thread.create_and_start_with_poly_data(tcp_socket, serve_thread)
+		threads[i] = thread.create_and_start_with_poly_data(socket, serve_thread)
 	}
 
-	//will replace with wait group
-	for {
-
-
-	}
+	sync.wait(&threads_closed)
 }
 
 serve_thread :: proc(socket: net.TCP_Socket) {
@@ -82,4 +61,6 @@ serve_thread :: proc(socket: net.TCP_Socket) {
 			fmt.printfln("Received: %v", string(buff[:size]))
 		}
 	}
+
+	sync.wait_group_done(&threads_closed)
 }
